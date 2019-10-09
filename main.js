@@ -6,26 +6,36 @@ const moment = require('moment')
 const path = require('path')
 
 console.time('process')
-console.timeLog('process')
-
-if (!fs.existsSync('./results/'))
-  fs.mkdirSync('./results/')
 
 /* USER INPUT */
-const fileStream = fs.createReadStream(
-  './timeline.json',
-  { encoding: 'utf8' }
-)
+const jsonFile = 'timeline'
+const resultFolder = 'results'
+const resultFileName = moment().toISOString().replace(/\:/g, '')
 
-const from = +moment('2019-09-01 00:00:00')
-const to = +moment('2019-09-30 23:59:59')
-const maxDist = 60
+const from = null//+moment('2019-09-01 00:00:00')
+const to = null//+moment('2019-09-30 23:59:59')
+
+const maxDist = 100
 const maxDeltaTime = moment.duration(10, 'minutes').asMilliseconds()
+
 const pointOfInterest = {
   x: -20.481060,
   y: -54.606517,
 }
 /* END — USER INPUT */
+
+console.time('creates results folder')
+fs.exists(`./${resultFolder}/`, exists => {
+  if (!exists)
+    fs.mkdir(`./${resultFolder}/`, () => console.timeEnd('creates results folder'))
+  else
+    console.timeEnd('creates results folder')
+})
+
+const fileStream = fs.createReadStream(
+  `./${jsonFile}.json`,
+  { encoding: 'utf8' }
+)
 
 const deg2rad = a => a * Math.PI / 180
 
@@ -40,6 +50,8 @@ const dist2points = (p1, p2) => {
   return 2 * r * Math.asin(Math.sqrt(Math.sin((phi2 - phi1) / 2) ** 2
     + Math.cos(phi1) * Math.cos(phi2) * Math.sin((lba2 - lba1) / 2) ** 2))
 }
+
+const numberAsRoundedStr = num => `00${num}`.substr(-2)
 
 let lastPoint = null
 const result = {}
@@ -107,8 +119,7 @@ const processPoint = point => {
 const printResult = () => {
   closeLastPeriod()
 
-  const fileName = moment().toISOString().replace(/\:/g, '')
-  const resultFile = fs.createWriteStream(`./results/${fileName}.txt`, { flags: 'a+' })
+  const resultFile = fs.createWriteStream(`./${resultFolder}/${resultFileName}.txt`, { flags: 'a+' })
 
   const formatedFrom = from
     ? moment(from).format('DD/MM/YYYY HH:mm:ss')
@@ -123,7 +134,7 @@ const printResult = () => {
   header += `\nmaxDeltaTime: ${moment.duration(maxDeltaTime, 'milliseconds').humanize()},`
   header += `\npointOfInterest: ${pointOfInterest.x} ${pointOfInterest.y}`
 
-  resultFile.write(`${header}\n\n`)
+  resultFile.write(`${header}\n`)
 
   for (let year in result) {
     let indent = '\n'
@@ -134,7 +145,7 @@ const printResult = () => {
     const minutes = numberAsRoundedStr(duration.minutes())
     const seconds = numberAsRoundedStr(duration.seconds())
 
-    resultFile.write(`${year} (${days} ${hours}:${minutes}:${seconds})`)
+    resultFile.write(`${indent}${year} (${days} ${hours}:${minutes}:${seconds})`)
 
     for (let month in result[year]) {
       if (month === 'duration') continue
@@ -149,7 +160,6 @@ const printResult = () => {
       const seconds = numberAsRoundedStr(duration.seconds())
 
       resultFile.write(`${indent}${month} (${days} ${hours}:${minutes}:${seconds})`)
-
 
       for (let day in result[year][month]) {
         if (day === 'duration') continue
@@ -181,14 +191,12 @@ const printResult = () => {
     if (!Object.keys(result).length)
       resultFile.write('\nno results')
 
-    resultFile.end()
+    // resultFile.end()
 
     console.timeLog('process', path.resolve(__dirname, resultFile.path))
     console.timeEnd('process')
   }
 }
-
-const numberAsRoundedStr = num => `00${num}`.substr(-2)
 
 const initPeriod = date => {
   const year = date.format('YYYY')

@@ -1,10 +1,9 @@
 {
-  "name": "tracking-amanda",
+  "name": "visit-times-gtl",
   "version": "1.0.0",
-  "description": "",
+  "description": "get visit times based on Google timeline json",
   "main": "main.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
     "start:dev": "nodemon main"
   },
   "keywords": [],

@@ -1,3 +1,4 @@
+// Download your own Location History JSON file at https://takeout.google.com/settings/takeout
 const JSONStream = require('JSONStream')
 const es = require('event-stream')
 const fs = require('fs')

@@ -4,7 +4,8 @@
   "description": "get visit times based on Google timeline json",
   "main": "main.js",
   "scripts": {
-    "start:dev": "nodemon main"
+    "start:dev": "nodemon main",
+    "run": "node main"
   },
   "keywords": [],
   "author": "",

@@ -7,6 +7,14 @@
       "type": "npm",
       "script": "start:dev",
       "problemMatcher": []
+    },
+    {
+      "type": "npm",
+      "script": "run",
+      "group": {
+        "kind": "build",
+        "isDefault": true
+      }
     }
   ]
 }

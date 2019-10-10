@@ -4,68 +4,24 @@ const es = require('event-stream')
 const fs = require('fs')
 const moment = require('moment')
 const path = require('path')
+const { jsonFile, resultFolder, resultFileName, from, to, maxDist, maxDeltaTime, pointOfInterest } = require('./params')
+const { createResultFolder, distBwPoints, num2roundedStr: num2RoundedStr } = require('./utils')
 
 console.time('process')
 
-/* USER INPUT */
-const jsonFile = 'timeline'
-const resultFolder = 'results'
-const resultFileName = moment().toISOString().replace(/\:/g, '')
+createResultFolder()
 
-const from = null//+moment('2019-09-01 00:00:00')
-const to = null//+moment('2019-09-30 23:59:59')
-
-const maxDist = 100
-const maxDeltaTime = moment.duration(10, 'minutes').asMilliseconds()
-
-const pointOfInterest = {
-  x: -20.481060,
-  y: -54.606517,
-}
-/* END — USER INPUT */
-
-console.time('creates results folder')
-fs.exists(`./${resultFolder}/`, exists => {
-  if (!exists)
-    fs.mkdir(`./${resultFolder}/`, () => console.timeEnd('creates results folder'))
-  else
-    console.timeEnd('creates results folder')
-})
-
-const fileStream = fs.createReadStream(
-  `./${jsonFile}.json`,
-  { encoding: 'utf8' }
-)
-
-const deg2rad = a => a * Math.PI / 180
-
-const dist2points = (p1, p2) => {
-  // Using https://en.wikipedia.org/wiki/Haversine_formula
-  const phi1 = deg2rad(p1.x)
-  const lba1 = deg2rad(p1.y)
-  const phi2 = deg2rad(p2.x)
-  const lba2 = deg2rad(p2.y)
-
-  const r = 6371 * 1e3 // Earth's radius: 6371kms in meters
-  return 2 * r * Math.asin(Math.sqrt(Math.sin((phi2 - phi1) / 2) ** 2
-    + Math.cos(phi1) * Math.cos(phi2) * Math.sin((lba2 - lba1) / 2) ** 2))
-}
-
-const numberAsRoundedStr = num => `00${num}`.substr(-2)
-
-let lastPoint = null
+let lastData = null
 const result = {}
 
-const processPoint = point => {
-  const dist = dist2points(
-    pointOfInterest,
-    { x: point.latitudeE7 / 1e7, y: point.longitudeE7 / 1e7 }
-  )
+const processPoint = data => {
+  const point = { x: data.latitudeE7 / 1e7, y: data.longitudeE7 / 1e7 }
+  const dist = distBwPoints(pointOfInterest, point)
 
   if (dist > maxDist)
     return
 
-  const unixTimestamp = Number.parseInt(point.timestampMs)
+  const unixTimestamp = Number.parseInt(data.timestampMs)
 
   if (from && unixTimestamp < from)
     return
@@ -78,14 +34,14 @@ const processPoint = point => {
 
   console.timeLog('process', `${date.format('DD MMMM YYYY')} ${unixTimestamp}`)
 
-  if (!lastPoint) {
+  if (!lastData) {
     initPeriod(date)
 
-    lastPoint = point
+    lastData = data
     return
   }
 
-  const lpUnixTimestamp = Number.parseInt(lastPoint.timestampMs)
+  const lpUnixTimestamp = Number.parseInt(lastData.timestampMs)
   const duration = unixTimestamp - lpUnixTimestamp
 
   if (duration < maxDeltaTime) {
@@ -106,14 +62,14 @@ const processPoint = point => {
 
     thisPeriod.duration += duration
 
-    lastPoint = point
+    lastData = data
     return
   }
 
   closeLastPeriod()
   initPeriod(date)
 
-  lastPoint = point
+  lastData = data
 }
 
 const printResult = () => {
@@ -141,9 +97,9 @@ const printResult = () => {
     const duration = moment.duration(result[year].duration, 'milliseconds')
 
     const days = Math.floor(duration.asDays())
-    const hours = numberAsRoundedStr(duration.hours())
-    const minutes = numberAsRoundedStr(duration.minutes())
-    const seconds = numberAsRoundedStr(duration.seconds())
+    const hours = num2RoundedStr(duration.hours())
+    const minutes = num2RoundedStr(duration.minutes())
+    const seconds = num2RoundedStr(duration.seconds())
 
     resultFile.write(`${indent}${year} (${days} ${hours}:${minutes}:${seconds})`)
 
@@ -155,9 +111,9 @@ const printResult = () => {
       const duration = moment.duration(result[year][month].duration, 'milliseconds')
 
       const days = Math.floor(duration.asDays())
-      const hours = numberAsRoundedStr(duration.hours())
-      const minutes = numberAsRoundedStr(duration.minutes())
-      const seconds = numberAsRoundedStr(duration.seconds())
+      const hours = num2RoundedStr(duration.hours())
+      const minutes = num2RoundedStr(duration.minutes())
+      const seconds = num2RoundedStr(duration.seconds())
 
       resultFile.write(`${indent}${month} (${days} ${hours}:${minutes}:${seconds})`)
 
@@ -168,9 +124,9 @@ const printResult = () => {
 
         const duration = moment.duration(result[year][month][day].duration, 'milliseconds')
 
-        const hours = numberAsRoundedStr(Math.floor(duration.asHours()))
-        const minutes = numberAsRoundedStr(duration.minutes())
-        const seconds = numberAsRoundedStr(duration.seconds())
+        const hours = num2RoundedStr(Math.floor(duration.asHours()))
+        const minutes = num2RoundedStr(duration.minutes())
+        const seconds = num2RoundedStr(duration.seconds())
 
         resultFile.write(`${indent}${day} (${hours}:${minutes}:${seconds})`)
 
@@ -180,9 +136,9 @@ const printResult = () => {
 
           const duration = moment.duration(p.duration, 'milliseconds')
 
-          const hours = numberAsRoundedStr(Math.floor(duration.asHours()))
-          const minutes = numberAsRoundedStr(duration.minutes())
-          const seconds = numberAsRoundedStr(duration.seconds())
+          const hours = num2RoundedStr(Math.floor(duration.asHours()))
+          const minutes = num2RoundedStr(duration.minutes())
+          const seconds = num2RoundedStr(duration.seconds())
           resultFile.write(`${indent}${p.from} — ${p.to} (${hours}:${minutes}:${seconds})`)
         })
       }
@@ -225,20 +181,23 @@ const initPeriod = date => {
 }
 
 const closeLastPeriod = () => {
-  if (!lastPoint) return
+  if (!lastData) return
 
-  const lpUnixTimestamp = Number.parseInt(lastPoint.timestampMs)
+  const lpUnixTimestamp = Number.parseInt(lastData.timestampMs)
   const lastDate = moment(lpUnixTimestamp)
   const lastYear = lastDate.format('YYYY')
   const lastMonth = lastDate.format('MMMM')
   const lastDay = lastDate.format('DD')
+
+  if (!result[lastYear][lastMonth][lastDay])
+    return
 
   const periods = result[lastYear][lastMonth][lastDay].periods
   let lastPeriod = periods[periods.length - 1]
   lastPeriod.to = lastDate.format('HH:mm')
 }
 
-fileStream
+fs.createReadStream(`./${jsonFile}.json`, { encoding: 'utf8' })
   .pipe(JSONStream.parse('locations.*'))
   .pipe(es.through(processPoint, function end() {
     console.timeLog('process', 'done reading file...')

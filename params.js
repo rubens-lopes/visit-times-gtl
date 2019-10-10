@@ -1,7 +1,7 @@
 const moment = require('moment')
 
 module.exports = {
-    jsonFile: 'timeline.min',
+    jsonFile: 'timeline',
     resultFolder: 'results',
     resultFileName: moment().toISOString().replace(/\:/g, ''),
 
@@ -9,7 +9,7 @@ module.exports = {
     to: null,//+moment('2019-10-01 23:59:59'),
 
     maxDist: 100,
-    maxDeltaTime: moment.duration(15, 'minutes').asMilliseconds(),
+    maxDeltaTime: moment.duration(10, 'minutes').asMilliseconds(),
 
-    pointOfInterest: { x: -20.480556, y: -54.604861 }
+    pointOfInterest: { x: -20.481060, y: -54.606517 }
 }

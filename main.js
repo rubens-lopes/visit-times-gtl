@@ -5,7 +5,7 @@ const fs = require('fs')
 const moment = require('moment')
 const path = require('path')
 const { jsonFile, resultFolder, resultFileName, from, to, maxDist, maxDeltaTime, pointOfInterest } = require('./params')
-const { createResultFolder, distBwPoints, num2roundedStr: num2RoundedStr } = require('./utils')
+const { createResultFolder, distBwPoints, num2roundedStr } = require('./utils')
 
 console.time('process')
 
@@ -15,22 +15,8 @@ let lastData = null
 const result = {}
 
 const processPoint = data => {
-  const point = { x: data.latitudeE7 / 1e7, y: data.longitudeE7 / 1e7 }
-  const dist = distBwPoints(pointOfInterest, point)
-
-  if (dist > maxDist)
-    return
-
   const unixTimestamp = Number.parseInt(data.timestampMs)
-
-  if (from && unixTimestamp < from)
-    return
-
-  if (to && unixTimestamp > to)
-    return
-
   const date = moment(unixTimestamp)
-
 
   console.timeLog('process', `${date.format('DD MMMM YYYY')} ${unixTimestamp}`)
 
@@ -77,12 +63,8 @@ const printResult = () => {
 
   const resultFile = fs.createWriteStream(`./${resultFolder}/${resultFileName}.txt`, { flags: 'a+' })
 
-  const formatedFrom = from
-    ? moment(from).format('DD/MM/YYYY HH:mm:ss')
-    : ''
-  const formatedTo = to
-    ? moment(to).format('DD/MM/YYYY HH:mm:ss')
-    : ''
+  const formatedFrom = from ? moment(from).format('DD/MM/YYYY HH:mm:ss') : ''
+  const formatedTo = to ? moment(to).format('DD/MM/YYYY HH:mm:ss') : ''
 
   let header = `from: ${formatedFrom}`
   header += `\nto: ${formatedTo}`
@@ -97,9 +79,9 @@ const printResult = () => {
     const duration = moment.duration(result[year].duration, 'milliseconds')
 
     const days = Math.floor(duration.asDays())
-    const hours = num2RoundedStr(duration.hours())
-    const minutes = num2RoundedStr(duration.minutes())
-    const seconds = num2RoundedStr(duration.seconds())
+    const hours = num2roundedStr(duration.hours())
+    const minutes = num2roundedStr(duration.minutes())
+    const seconds = num2roundedStr(duration.seconds())
 
     resultFile.write(`${indent}${year} (${days} ${hours}:${minutes}:${seconds})`)
 
@@ -111,9 +93,9 @@ const printResult = () => {
       const duration = moment.duration(result[year][month].duration, 'milliseconds')
 
       const days = Math.floor(duration.asDays())
-      const hours = num2RoundedStr(duration.hours())
-      const minutes = num2RoundedStr(duration.minutes())
-      const seconds = num2RoundedStr(duration.seconds())
+      const hours = num2roundedStr(duration.hours())
+      const minutes = num2roundedStr(duration.minutes())
+      const seconds = num2roundedStr(duration.seconds())
 
       resultFile.write(`${indent}${month} (${days} ${hours}:${minutes}:${seconds})`)
 
@@ -124,9 +106,9 @@ const printResult = () => {
 
         const duration = moment.duration(result[year][month][day].duration, 'milliseconds')
 
-        const hours = num2RoundedStr(Math.floor(duration.asHours()))
-        const minutes = num2RoundedStr(duration.minutes())
-        const seconds = num2RoundedStr(duration.seconds())
+        const hours = num2roundedStr(Math.floor(duration.asHours()))
+        const minutes = num2roundedStr(duration.minutes())
+        const seconds = num2roundedStr(duration.seconds())
 
         resultFile.write(`${indent}${day} (${hours}:${minutes}:${seconds})`)
 
@@ -136,22 +118,18 @@ const printResult = () => {
 
           const duration = moment.duration(p.duration, 'milliseconds')
 
-          const hours = num2RoundedStr(Math.floor(duration.asHours()))
-          const minutes = num2RoundedStr(duration.minutes())
-          const seconds = num2RoundedStr(duration.seconds())
+          const hours = num2roundedStr(Math.floor(duration.asHours()))
+          const minutes = num2roundedStr(duration.minutes())
+          const seconds = num2roundedStr(duration.seconds())
           resultFile.write(`${indent}${p.from} — ${p.to} (${hours}:${minutes}:${seconds})`)
         })
       }
     }
-
-    if (!Object.keys(result).length)
-      resultFile.write('\nno results')
-
-    // resultFile.end()
-
-    console.timeLog('process', path.resolve(__dirname, resultFile.path))
-    console.timeEnd('process')
   }
+  resultFile.end()
+
+  console.timeLog('process', path.resolve(__dirname, resultFile.path))
+  console.timeEnd('process')
 }
 
 const initPeriod = date => {
@@ -197,8 +175,26 @@ const closeLastPeriod = () => {
   lastPeriod.to = lastDate.format('HH:mm')
 }
 
+const filterByParams = data => {
+  const point = { x: data.latitudeE7 / 1e7, y: data.longitudeE7 / 1e7 }
+  const dist = distBwPoints(pointOfInterest, point)
+
+  if (dist > maxDist)
+    return
+
+  const unixTimestamp = Number.parseInt(data.timestampMs)
+
+  if (from && unixTimestamp < from)
+    return
+
+  if (to && unixTimestamp > to)
+    return
+
+  return data
+}
+
 fs.createReadStream(`./${jsonFile}.json`, { encoding: 'utf8' })
-  .pipe(JSONStream.parse('locations.*'))
+  .pipe(JSONStream.parse('locations.*', filterByParams))
   .pipe(es.through(processPoint, function end() {
     console.timeLog('process', 'done reading file...')
     printResult()

@@ -5,7 +5,7 @@ const deg2rad = a => a * Math.PI / 180
 
 module.exports = {
     createResultFolder: () => {
-        const timerLabel = `creates '${resultFolder}' folder`
+        const timerLabel = `create '${resultFolder}' folder`
         console.time(timerLabel)
 
         fs.exists(`./${resultFolder}/`, exists => {

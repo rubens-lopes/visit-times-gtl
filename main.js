@@ -5,7 +5,7 @@ const fs = require('fs')
 const moment = require('moment')
 const path = require('path')
 const { jsonFile, resultFolder, resultFileName, from, to, maxDist, maxDeltaTime, pointOfInterest } = require('./params')
-const { createResultFolder, distBwPoints, num2roundedStr } = require('./utils')
+const { createResultFolder, distBwPoints, num2roundedStr, getMonthName } = require('./utils')
 
 console.time('process')
 
@@ -13,52 +13,101 @@ createResultFolder()
 
 let lastData = null
 const result = {}
+let totalPoints = 0
 
 const processPoint = data => {
-  const unixTimestamp = Number.parseInt(data.timestampMs)
-  const date = moment(unixTimestamp)
+  console.timeLog('process', `${data.unixTimestamp}`)
 
-  console.timeLog('process', `${date.format('DD MMMM YYYY')} ${unixTimestamp}`)
+  initDate(data)
 
-  if (!lastData) {
-    initPeriod(date)
+  const ldUnixTimestamp = lastData && lastData.unixTimestamp
+  const duration = data.unixTimestamp - ldUnixTimestamp
 
-    lastData = data
-    return
+  if (duration > maxDeltaTime) {
+    initPeriod(data)
   }
+  else {
+    result[data.dateObj.years].duration += duration
+    result[data.dateObj.years][data.month].duration += duration
+    result[data.dateObj.years][data.month][data.dateObj.date].duration += duration
 
-  const lpUnixTimestamp = Number.parseInt(lastData.timestampMs)
-  const duration = unixTimestamp - lpUnixTimestamp
-
-  if (duration < maxDeltaTime) {
-    const lastDate = moment(lpUnixTimestamp)
-    const lastYear = lastDate.format('YYYY')
-    const lastMonth = lastDate.format('MMMM')
-    const lastDay = lastDate.format('DD')
-
-    if (!result[lastYear][lastMonth][lastDay])
-      initPeriod(lastDate)
-
-    const periods = result[lastYear][lastMonth][lastDay].periods
-    let thisPeriod = periods[periods.length - 1]
-
-    result[lastYear].duration += duration
-    result[lastYear][lastMonth].duration += duration
-    result[lastYear][lastMonth][lastDay].duration += duration
-
+    const periods = result[data.dateObj.years][data.month][data.dateObj.date].periods
+    const thisPeriod = periods[periods.length - 1]
     thisPeriod.duration += duration
-
-    lastData = data
-    return
   }
-
-  closeLastPeriod()
-  initPeriod(date)
 
   lastData = data
 }
 
-const printResult = () => {
+const initDate = data => {
+  const year = data.dateObj.years
+  if (!result.hasOwnProperty(year))
+    result[year] = { duration: 0 }
+
+  const month = data.month
+  if (!result[year].hasOwnProperty(month))
+    result[year][month] = { duration: 0 }
+
+  const date = data.dateObj.date
+  if (!result[year][month].hasOwnProperty(date))
+    result[year][month][date] = {
+      periods: [],
+      duration: 0,
+    }
+}
+
+const initPeriod = data => {
+  closeLastPeriod()
+
+  const month = data.month
+  const periods = result[data.dateObj.years][month][data.dateObj.date].periods
+
+  periods.push({
+    from: `${num2roundedStr(data.dateObj.hours)}:${num2roundedStr(data.dateObj.minutes)}`,
+    to: '',
+    duration: 0,
+  })
+}
+
+const closeLastPeriod = () => {
+  if (!lastData) return
+
+  const month = lastData.month
+  const date = result[lastData.dateObj.years][month][lastData.dateObj.date]
+
+  const lastPeriod = date.periods[date.periods.length - 1]
+  lastPeriod.to = `${num2roundedStr(lastData.dateObj.hours)}:${num2roundedStr(lastData.dateObj.minutes)}`
+}
+
+const filterByParams = data => {
+  const point = { x: data.latitudeE7 / 1e7, y: data.longitudeE7 / 1e7 }
+  const dist = distBwPoints(pointOfInterest, point)
+
+  if (dist > maxDist)
+    return
+
+  const unixTimestamp = Number.parseInt(data.timestampMs)
+
+  if (from && unixTimestamp < from)
+    return
+
+  if (to && unixTimestamp > to)
+    return
+
+  const date = moment(unixTimestamp)
+  const dateObj = date.toObject()
+
+  totalPoints++
+
+  return {
+    unixTimestamp,
+    month: getMonthName(dateObj.months),
+    dateObj
+  }
+}
+
+const writeResult = () => {
+  console.time('write result file')
   closeLastPeriod()
 
   const resultFile = fs.createWriteStream(`./${resultFolder}/${resultFileName}.txt`, { flags: 'a+' })
@@ -70,6 +119,7 @@ const printResult = () => {
   header += `\nto: ${formatedTo}`
   header += `\nmaxDist: ${maxDist} m`
   header += `\nmaxDeltaTime: ${moment.duration(maxDeltaTime, 'milliseconds').humanize()},`
+  header += `\npoints found: ${totalPoints}`
   header += `\npointOfInterest: ${pointOfInterest.x} ${pointOfInterest.y}`
 
   resultFile.write(`${header}\n`)
@@ -110,7 +160,7 @@ const printResult = () => {
         const minutes = num2roundedStr(duration.minutes())
         const seconds = num2roundedStr(duration.seconds())
 
-        resultFile.write(`${indent}${day} (${hours}:${minutes}:${seconds})`)
+        resultFile.write(`${indent}${num2roundedStr(day)} (${hours}:${minutes}:${seconds})`)
 
 
         result[year][month][day].periods.forEach(p => {
@@ -121,81 +171,21 @@ const printResult = () => {
           const hours = num2roundedStr(Math.floor(duration.asHours()))
           const minutes = num2roundedStr(duration.minutes())
           const seconds = num2roundedStr(duration.seconds())
+
           resultFile.write(`${indent}${p.from} — ${p.to} (${hours}:${minutes}:${seconds})`)
         })
       }
     }
   }
+
   resultFile.end()
 
-  console.timeLog('process', path.resolve(__dirname, resultFile.path))
+  console.timeEnd('write result file')
   console.timeEnd('process')
-}
 
-const initPeriod = date => {
-  const year = date.format('YYYY')
-  const month = date.format('MMMM')
-  const day = date.format('DD')
-  const time = date.format('HH:mm')
-
-  if (!result.hasOwnProperty(year))
-    result[year] = { duration: 0 }
-
-  if (!result[year].hasOwnProperty(month))
-    result[year][month] = { duration: 0 }
-
-  if (!result[year][month].hasOwnProperty(day))
-    result[year][month][day] = {
-      periods: [],
-      duration: 0,
-    }
-
-  if (!result[year][month][day].periods.some(p => p.from === time))
-    result[year][month][day].periods.push({
-      from: time,
-      to: "",
-      duration: 0
-    })
-}
-
-const closeLastPeriod = () => {
-  if (!lastData) return
-
-  const lpUnixTimestamp = Number.parseInt(lastData.timestampMs)
-  const lastDate = moment(lpUnixTimestamp)
-  const lastYear = lastDate.format('YYYY')
-  const lastMonth = lastDate.format('MMMM')
-  const lastDay = lastDate.format('DD')
-
-  if (!result[lastYear][lastMonth][lastDay])
-    return
-
-  const periods = result[lastYear][lastMonth][lastDay].periods
-  let lastPeriod = periods[periods.length - 1]
-  lastPeriod.to = lastDate.format('HH:mm')
-}
-
-const filterByParams = data => {
-  const point = { x: data.latitudeE7 / 1e7, y: data.longitudeE7 / 1e7 }
-  const dist = distBwPoints(pointOfInterest, point)
-
-  if (dist > maxDist)
-    return
-
-  const unixTimestamp = Number.parseInt(data.timestampMs)
-
-  if (from && unixTimestamp < from)
-    return
-
-  if (to && unixTimestamp > to)
-    return
-
-  return data
+  console.log(path.resolve(__dirname, resultFile.path))
 }
 
 fs.createReadStream(`./${jsonFile}.json`, { encoding: 'utf8' })
   .pipe(JSONStream.parse('locations.*', filterByParams))
-  .pipe(es.through(processPoint, function end() {
-    console.timeLog('process', 'done reading file...')
-    printResult()
-  }))
+  .pipe(es.through(processPoint, writeResult))

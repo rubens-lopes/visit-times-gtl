@@ -86,21 +86,19 @@ const filterByParams = data => {
   if (dist > maxDist)
     return
 
-  const unixTimestamp = Number.parseInt(data.timestampMs)
+  const timestamp = moment(data.timestamp)
 
-  if (from && unixTimestamp < from)
+  if (timestamp.isBefore(from))
     return
 
-  if (to && unixTimestamp > to)
+  if (timestamp.isAfter(to))
     return
 
-  const date = moment(unixTimestamp)
-  const dateObj = date.toObject()
-
+  const dateObj = timestamp.toObject()
   totalPoints++
 
   return {
-    unixTimestamp,
+    unixTimestamp: timestamp,
     month: getMonthName(dateObj.months),
     dateObj
   }
